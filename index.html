@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ESP32 BLE GPS Tracker</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzxK7g2wLAj1H8W8Ece4m4aY=" crossorigin="">
+<style>
+:root{color-scheme:dark;font-family:system-ui,Arial,sans-serif}*{box-sizing:border-box}body{margin:0;background:#0d1421;color:#ecf3ff}main{max-width:980px;margin:auto;padding:18px}h1{font-size:1.5rem;margin:0 0 5px}.muted{color:#a4b5ca}.header{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}.panel{background:#19283b;border:1px solid #30435a;border-radius:14px;padding:15px;margin-top:14px}.controls{display:flex;gap:9px;flex-wrap:wrap;margin:14px 0}button,a.action{background:#387df1;color:white;border:0;border-radius:9px;padding:11px 15px;font-weight:650;cursor:pointer;text-decoration:none}button.secondary,a.action.secondary{background:#30435a}button:disabled{opacity:.5;cursor:not-allowed}.stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.stat{background:#21334b;border-radius:10px;padding:12px}.label{font-size:.8rem;color:#a6b9d0}.value{font-size:1.12rem;font-weight:700;margin-top:4px;overflow-wrap:anywhere}#map{height:410px;border-radius:12px;background:#203444}.status{font-weight:700;color:#ffcb78}small{line-height:1.5;display:block}.leaflet-container{color:#222}@media(min-width:650px){.stats{grid-template-columns:repeat(4,minmax(0,1fr))}}
+</style></head><body><main>
+<div class="header"><div><h1>🛰️ GPS Live Tracker</h1><div class="muted">ESP32 · Bluetooth Low Energy · OLED</div></div><span id="status" class="status">BLE disconnected</span></div>
+<div class="controls"><button id="connect">Connect ESP32</button><button id="disconnect" class="secondary" disabled>Disconnect</button><button id="follow" class="secondary">Follow: ON</button><button id="clear" class="secondary">Clear trail</button><a id="google" class="action secondary" target="_blank" rel="noopener" style="display:none">Open in Google Maps</a></div>
+<div class="stats">
+<div class="stat"><div class="label">Latitude</div><div class="value" id="lat">—</div></div>
+<div class="stat"><div class="label">Longitude</div><div class="value" id="lon">—</div></div>
+<div class="stat"><div class="label">Satellites</div><div class="value" id="sat">—</div></div>
+<div class="stat"><div class="label">GPS fix</div><div class="value" id="fix">Waiting</div></div>
+<div class="stat"><div class="label">Speed</div><div class="value" id="speed">—</div></div>
+<div class="stat"><div class="label">Altitude</div><div class="value" id="alt">—</div></div>
+<div class="stat"><div class="label">HDOP (not metres)</div><div class="value" id="hdop">—</div></div>
+<div class="stat"><div class="label">Last packet</div><div class="value" id="last">—</div></div>
+</div>
+<div class="panel"><div id="map"></div><small class="muted">Map tiles require internet. GPS data arrives through BLE. Map marker moves only after a fresh valid GPS fix. HDOP is a dilution-of-precision measure, not an accuracy estimate in metres.</small></div>
+<div class="panel"><div id="message" aria-live="polite">Open this page in Chrome on Android using HTTPS, then tap Connect ESP32. Enable Bluetooth and location permissions if prompted.</div></div>
+</main>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script>
+const SERVICE='0ad78e5c-1a7a-4b9a-8c15-31a96d9e32c2';
+const CHARACTERISTIC='2db8aa52-9017-4a5c-95a0-6f234e01981b';
+let device=null,characteristic=null,follow=true,marker=null,trail=null,map=null;
+const el=id=>document.getElementById(id);
+const say=msg=>{el('message').textContent=msg};
+if(typeof L!=='undefined'){
+ map=L.map('map').setView([20.5937,78.9629],5);
+ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap contributors',maxZoom:19}).addTo(map);
+ trail=L.polyline([],{color:'#3186ff',weight:4}).addTo(map);
+}else say('Map library did not load. Check internet access. BLE coordinates can still update.');
+function setConnected(on){el('status').textContent=on?'BLE connected':'BLE disconnected';el('status').style.color=on?'#80e8ae':'#ffcb78';el('connect').disabled=on;el('disconnect').disabled=!on;}
+function disconnected(){characteristic=null;setConnected(false);say('Disconnected. Tap Connect ESP32 to reconnect.');}
+function update(event){
+ const raw=new TextDecoder().decode(event.target.value);
+ const p=raw.trim().split(',');if(p.length!==8)return;
+ const [fix,lat,lon,sat,speed,alt,hdop,receiving]=p;
+ el('last').textContent=new Date().toLocaleTimeString();
+ el('sat').textContent=sat;
+ el('fix').textContent=receiving==='0'?'NO DATA':fix==='1'?'FIX OK':'SEARCHING';
+ if(fix!=='1'){say(receiving==='0'?'GPS UART data not arriving. Check GPS TX → GPIO16 and power.':'Receiving GPS data, waiting for a fresh satellite position fix.');return;}
+ const latitude=Number(lat),longitude=Number(lon);
+ if(!Number.isFinite(latitude)||!Number.isFinite(longitude)||Math.abs(latitude)>90||Math.abs(longitude)>180)return;
+ el('lat').textContent=latitude.toFixed(6);el('lon').textContent=longitude.toFixed(6);
+ el('speed').textContent=Number(speed).toFixed(1)+' km/h';el('alt').textContent=Number(alt).toFixed(1)+' m';el('hdop').textContent=hdop;
+ el('google').style.display='inline-block';el('google').href=`https://www.google.com/maps?q=${latitude},${longitude}`;
+ if(map){const pt=[latitude,longitude];if(!marker)marker=L.marker(pt).addTo(map);else marker.setLatLng(pt);
+ trail.addLatLng(pt);if(trail.getLatLngs().length>1000)trail.setLatLngs(trail.getLatLngs().slice(-1000));
+ if(follow)map.setView(pt,Math.max(map.getZoom(),16));}
+ say('Receiving live GPS updates over Bluetooth.');
+}
+el('connect').onclick=async()=>{
+ if(!navigator.bluetooth){say('Web Bluetooth unavailable. Use Chrome on Android and an HTTPS website.');return;}
+ try{
+  say('Choose ESP32-GPS-BLE from the Bluetooth device picker.');
+  device=await navigator.bluetooth.requestDevice({filters:[{name:'ESP32-GPS-BLE'}],optionalServices:[SERVICE]});
+  device.addEventListener('gattserverdisconnected',disconnected);
+  const server=await device.gatt.connect();
+  const service=await server.getPrimaryService(SERVICE);
+  characteristic=await service.getCharacteristic(CHARACTERISTIC);
+  await characteristic.startNotifications();characteristic.addEventListener('characteristicvaluechanged',update);
+  setConnected(true);say('Connected! Waiting for GPS updates...');
+ }catch(e){say('Bluetooth connection error: '+e.message);setConnected(false);}
+};
+el('disconnect').onclick=()=>{if(device&&device.gatt.connected)device.gatt.disconnect();};
+el('follow').onclick=()=>{follow=!follow;el('follow').textContent='Follow: '+(follow?'ON':'OFF');};
+el('clear').onclick=()=>{if(trail)trail.setLatLngs([]);say('Movement trail cleared.');};
+</script></body></html>
