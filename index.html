@@ -56,7 +56,10 @@ el('connect').onclick=async()=>{
  if(!navigator.bluetooth){say('Web Bluetooth unavailable. Use Chrome on Android and an HTTPS website.');return;}
  try{
   say('Choose ESP32-GPS-BLE from the Bluetooth device picker.');
-  device=await navigator.bluetooth.requestDevice({filters:[{name:'ESP32-GPS-BLE'}],optionalServices:[SERVICE]});
+  device = await navigator.bluetooth.requestDevice({
+  acceptAllDevices: true,
+  optionalServices: [SERVICE]
+});
   device.addEventListener('gattserverdisconnected',disconnected);
   const server=await device.gatt.connect();
   const service=await server.getPrimaryService(SERVICE);
