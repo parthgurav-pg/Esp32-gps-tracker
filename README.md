@@ -1,13 +1,13 @@
 # ESP32 Live GPS Tracker
 
-A real-time GPS tracking system built with an **ESP32**, **NEO-6M GPS module**, and **I²C OLED display**. View live coordinates and movement on your phone using either **Wi-Fi** or **Bluetooth Low Energy (BLE)**.
+A real-time GPS tracking system built with an **ESP32**, **GY-GPS6MV2**, and **I²C OLED display**. View live coordinates and movement on your phone using either **Wi-Fi** or **Bluetooth Low Energy (BLE)**.
 
 Both methods use the same hardware connections; only the ESP32 firmware and phone connection method change.
 
 ## Components
 
 - ESP32 development board (ESP32-WROOM-32)
-- GY-GPS6MV2 / NEO-6M GPS module with antenna
+- GY-GPS6MV2 module with antenna
 - SSD1306 I²C OLED display (128 × 64, 4-pin)
 - Jumper wires and USB power supply
 
