@@ -3,7 +3,17 @@
 <title>ESP32 BLE GPS Tracker</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzxK7g2wLAj1H8W8Ece4m4aY=" crossorigin="">
 <style>
-:root{color-scheme:dark;font-family:system-ui,Arial,sans-serif}*{box-sizing:border-box}body{margin:0;background:#0d1421;color:#ecf3ff}main{max-width:980px;margin:auto;padding:18px}h1{font-size:1.5rem;margin:0 0 5px}.muted{color:#a4b5ca}.header{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}.panel{background:#19283b;border:1px solid #30435a;border-radius:14px;padding:15px;margin-top:14px}.controls{display:flex;gap:9px;flex-wrap:wrap;margin:14px 0}button,a.action{background:#387df1;color:white;border:0;border-radius:9px;padding:11px 15px;font-weight:650;cursor:pointer;text-decoration:none}button.secondary,a.action.secondary{background:#30435a}button:disabled{opacity:.5;cursor:not-allowed}.stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.stat{background:#21334b;border-radius:10px;padding:12px}.label{font-size:.8rem;color:#a6b9d0}.value{font-size:1.12rem;font-weight:700;margin-top:4px;overflow-wrap:anywhere}#map{height:410px;border-radius:12px;background:#203444}.status{font-weight:700;color:#ffcb78}small{line-height:1.5;display:block}.leaflet-container{color:#222}@media(min-width:650px){.stats{grid-template-columns:repeat(4,minmax(0,1fr))}}
+:root{color-scheme:dark;font-family:system-ui,Arial,sans-serif}*{box-sizing:border-box}body{margin:0;background:#0d1421;color:#ecf3ff}main{max-width:980px;margin:auto;padding:18px}h1{font-size:1.5rem;margin:0 0 5px}.muted{color:#a4b5ca}.header{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}.panel{background:#19283b;border:1px solid #30435a;border-radius:14px;padding:15px;margin-top:14px}.controls{display:flex;gap:9px;flex-wrap:wrap;margin:14px 0}button,a.action{background:#387df1;color:white;border:0;border-radius:9px;padding:11px 15px;font-weight:650;cursor:pointer;text-decoration:none}button.secondary,a.action.secondary{background:#30435a}button:disabled{opacity:.5;cursor:not-allowed}.stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.stat{background:#21334b;border-radius:10px;padding:12px}.label{font-size:.8rem;color:#a6b9d0}.value{font-size:1.12rem;font-weight:700;margin-top:4px;overflow-wrap:anywhere}#map{height:410px;width:100%;position:relative;overflow:hidden;border-radius:12px;background:#203444;isolation:isolate}.status{font-weight:700;color:#ffcb78}small{line-height:1.5;display:block}/* Fallback positioning if external Leaflet CSS is blocked or delayed */
+.leaflet-container{color:#222;position:relative;overflow:hidden;outline:0}
+.leaflet-pane,.leaflet-tile,.leaflet-marker-icon,.leaflet-marker-shadow,.leaflet-tile-container,.leaflet-pane>svg,.leaflet-pane>canvas{position:absolute;left:0;top:0}
+.leaflet-map-pane,.leaflet-pane,.leaflet-tile-container{width:100%;height:100%}
+.leaflet-tile{width:256px;height:256px;max-width:none!important;max-height:none!important}
+.leaflet-control-container{position:relative;z-index:1000}
+.leaflet-top,.leaflet-bottom{position:absolute;z-index:1000;pointer-events:none}
+.leaflet-top{top:0}.leaflet-bottom{bottom:0}.leaflet-left{left:0}.leaflet-right{right:0}
+.leaflet-control{pointer-events:auto}
+.leaflet-zoom-animated{transform-origin:0 0}
+@media(min-width:650px){.stats{grid-template-columns:repeat(4,minmax(0,1fr))}}
 </style></head><body><main>
 <div class="header"><div><h1>🛰️ GPS Live Tracker</h1><div class="muted">ESP32 · Bluetooth Low Energy · OLED</div></div><span id="status" class="status">BLE disconnected</span></div>
 <div class="controls"><button id="connect">Connect ESP32</button><button id="disconnect" class="secondary" disabled>Disconnect</button><button id="follow" class="secondary">Follow: ON</button><button id="clear" class="secondary">Clear trail</button><a id="google" class="action secondary" target="_blank" rel="noopener" style="display:none">Open in Google Maps</a></div>
@@ -30,7 +40,7 @@ const say=msg=>{el('message').textContent=msg};
 if(typeof L!=='undefined'){
  map=L.map('map').setView([20.5937,78.9629],5);
  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap contributors',maxZoom:19}).addTo(map);
- trail=L.polyline([],{color:'#3186ff',weight:4}).addTo(map);
+ trail=L.polyline([],{color:'#3186ff',weight:4}).addTo(map);setTimeout(()=>map.invalidateSize(),350);
 }else say('Map library did not load. Check internet access. BLE coordinates can still update.');
 function setConnected(on){el('status').textContent=on?'BLE connected':'BLE disconnected';el('status').style.color=on?'#80e8ae':'#ffcb78';el('connect').disabled=on;el('disconnect').disabled=!on;}
 function disconnected(){characteristic=null;setConnected(false);say('Disconnected. Tap Connect ESP32 to reconnect.');}
@@ -47,19 +57,16 @@ function update(event){
  el('lat').textContent=latitude.toFixed(6);el('lon').textContent=longitude.toFixed(6);
  el('speed').textContent=Number(speed).toFixed(1)+' km/h';el('alt').textContent=Number(alt).toFixed(1)+' m';el('hdop').textContent=hdop;
  el('google').style.display='inline-block';el('google').href=`https://www.google.com/maps?q=${latitude},${longitude}`;
- if(map){const pt=[latitude,longitude];if(!marker)marker=L.marker(pt).addTo(map);else marker.setLatLng(pt);
+ if(map){const pt=[latitude,longitude];if(!marker)marker=L.circleMarker(pt,{radius:9,color:'#ffffff',weight:3,fillColor:'#1877ff',fillOpacity:1}).addTo(map);else marker.setLatLng(pt);
  trail.addLatLng(pt);if(trail.getLatLngs().length>1000)trail.setLatLngs(trail.getLatLngs().slice(-1000));
- if(follow)map.setView(pt,Math.max(map.getZoom(),16));}
+ if(follow)map.setView(pt,Math.max(map.getZoom(),16));requestAnimationFrame(()=>map.invalidateSize());}
  say('Receiving live GPS updates over Bluetooth.');
 }
 el('connect').onclick=async()=>{
  if(!navigator.bluetooth){say('Web Bluetooth unavailable. Use Chrome on Android and an HTTPS website.');return;}
  try{
   say('Choose ESP32-GPS-BLE from the Bluetooth device picker.');
-  device = await navigator.bluetooth.requestDevice({
-  acceptAllDevices: true,
-  optionalServices: [SERVICE]
-});
+  device=await navigator.bluetooth.requestDevice({acceptAllDevices:true,optionalServices:[SERVICE]});
   device.addEventListener('gattserverdisconnected',disconnected);
   const server=await device.gatt.connect();
   const service=await server.getPrimaryService(SERVICE);
